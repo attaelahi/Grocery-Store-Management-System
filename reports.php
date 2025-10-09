@@ -348,6 +348,14 @@ include 'app/views/layout/header.php';
                                 <td>Rs<?php echo formatCurrency($row['tax_amount']); ?></td>
                                 <td>Rs<?php echo formatCurrency($row['discount_amount']); ?></td>
                                 <td>Rs<?php echo formatCurrency($row['net_amount']); ?></td>
+                                <td>
+                                    <a href="app/controllers/view_invoice.php?id=<?php echo $row['id']; ?>" class="btn btn-sm btn-info" target="_blank" title="View Invoice">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <button onclick="printInvoice(<?php echo $row['id']; ?>)" class="btn btn-sm btn-secondary" title="Print Invoice">
+                                        <i class="fas fa-print"></i>
+                                    </button>
+                                </td>
                             <?php elseif ($report_type == 'products'): ?>
                                 <td><?php echo $row['name']; ?></td>
                                 <td><?php echo $row['sku']; ?></td>
@@ -374,6 +382,13 @@ include 'app/views/layout/header.php';
 </div>
 
 <script>
+function printInvoice(saleId) {
+    const printWindow = window.open(`app/controllers/view_invoice.php?id=${saleId}`, '_blank');
+    printWindow.onload = function() {
+        printWindow.print();
+    };
+}
+
 function exportToCSV() {
     let csv = [];
     const rows = document.querySelectorAll("table tr");

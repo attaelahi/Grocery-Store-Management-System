@@ -239,7 +239,7 @@ function updateCart() {
                                onchange="updateQuantity(${index}, this.value)">
                         <button class="btn btn-outline-secondary" onclick="updateQuantity(${index}, 1)">+</button>
                     </div>
-                    <span>$${formatCurrency(itemTotal)}</span>
+                    <span>Rs${formatCurrency(itemTotal)}</span>
                 </div>
             </div>
         `;
@@ -276,9 +276,9 @@ function calculateTotals() {
     const discount = parseFloat(document.getElementById('discountAmount').value) || 0;
     const total = subtotal + tax - discount;
     
-    document.getElementById('subtotal').textContent = `$${formatCurrency(subtotal)}`;
-    document.getElementById('tax').textContent = `$${formatCurrency(tax)}`;
-    document.getElementById('total').textContent = `$${formatCurrency(total)}`;
+    document.getElementById('subtotal').textContent = `Rs${formatCurrency(subtotal)}`;
+    document.getElementById('tax').textContent = `Rs${formatCurrency(tax)}`;
+    document.getElementById('total').textContent = `Rs${formatCurrency(total)}`;
 }
 
 // Format currency
@@ -374,10 +374,14 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
             showReceipt(data.sale);
             cart = [];
             updateCart();
-            // Show success message
+            // Show success message and open invoice
             Swal.fire({
                 icon: 'success',
                 title: 'Success!',
+                didClose: () => {
+                    // Open invoice in new window
+                    window.open(data.invoice_url, '_blank');
+                },
                 text: 'Sale completed successfully',
             });
         } else {
@@ -405,12 +409,27 @@ function showReceipt(sale) {
     const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
     const content = document.getElementById('receiptContent');
     
+    // Default settings in case fetch fails
+    const defaultSettings = {
+        shop_name: 'POSFlix',
+        shop_address: 'Default Address',
+        shop_phone: 'N/A',
+        footer_text: 'Thank you for your purchase!',
+        currency: 'PKR'
+    };
+    
     // Get store settings
-    fetch('/posflix/app/controllers/get_settings.php')
-    .then(response => response.json())
+    fetch('app/controllers/get_settings.php')
+    .then(response => {
+        if (!response.ok) {
+            console.warn('Failed to fetch settings, using default settings');
+            return defaultSettings;
+        }
+        return response.json();
+    })
     .then(settings => {
-        const currency = settings.currency || 'USD';
-        const currencySymbol = currency === 'USD' ? '$' : currency;
+        const currency = settings.currency || 'PKR';
+        const currencySymbol = currency === 'PKR' ? 'Rs' : currency;
         
         // Build receipt HTML
         let receiptHtml = `
@@ -423,7 +442,7 @@ function showReceipt(sale) {
             
             <div class="mb-4">
                 <p class="mb-1">Date: ${new Date().toLocaleString()}</p>
-                <p>Cashier: ${sale.cashier_name}</p>
+                <p>Cashier: ${sale.cashier_name || 'N/A'}</p>
             </div>
             
             <table class="table table-sm">
@@ -470,11 +489,63 @@ function showReceipt(sale) {
     })
     .catch(error => {
         console.error('Error loading settings:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Could not load receipt settings. Please try again.'
+        // Use default settings
+        const currencySymbol = 'Rs';
+        
+        let receiptHtml = `
+            <div class="text-center mb-4">
+                <h4>${defaultSettings.shop_name}</h4>
+                <p class="mb-1">${defaultSettings.shop_address}</p>
+                <p class="mb-1">Phone: ${defaultSettings.shop_phone}</p>
+                <p>Invoice #: ${sale.invoice_no}</p>
+            </div>
+            
+            <div class="mb-4">
+                <p class="mb-1">Date: ${new Date().toLocaleString()}</p>
+                <p>Cashier: ${sale.cashier_name || 'N/A'}</p>
+            </div>
+            
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th class="text-end">Qty</th>
+                        <th class="text-end">Price</th>
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+        
+        // Add items
+        sale.items.forEach(item => {
+            receiptHtml += `
+                <tr>
+                    <td>${item.name}</td>
+                    <td class="text-end">${item.quantity}</td>
+                    <td class="text-end">${currencySymbol}${formatCurrency(item.price)}</td>
+                    <td class="text-end">${currencySymbol}${formatCurrency(item.price * item.quantity)}</td>
+                </tr>`;
         });
+        
+        // Add totals
+        receiptHtml += `
+                </tbody>
+            </table>
+            
+            <div class="text-end mb-4">
+                <p class="mb-1">Subtotal: ${currencySymbol}${formatCurrency(sale.subtotal)}</p>
+                <p class="mb-1">Tax: ${currencySymbol}${formatCurrency(sale.tax_amount)}</p>
+                <p class="mb-1">Discount: ${currencySymbol}${formatCurrency(sale.discount_amount)}</p>
+                <h5>Total: ${currencySymbol}${formatCurrency(sale.net_amount)}</h5>
+            </div>
+            
+            <div class="text-center">
+                <p class="mb-1">Payment Method: ${sale.payment_method}</p>
+                <p>${defaultSettings.footer_text}</p>
+            </div>`;
+        
+        content.innerHTML = receiptHtml;
+        modal.show();
     });
 }
 

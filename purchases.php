@@ -431,7 +431,7 @@ include 'app/views/layout/header.php';
                             </tr>
                             <tr>
                                 <th colspan="3" class="text-end">Total:</th>
-                                <th class="text-end" id="grandTotal">$0.00</th>
+                                <th class="text-end" id="grandTotal">Rs0.00</th>
                                 <th></th>
                             </tr>
                         </tfoot>
@@ -497,8 +497,43 @@ include 'app/views/layout/header.php';
 
 <script>
 let items = <?php echo $purchase_items ? json_encode($purchase_items) : '[]'; ?>;
-const productModal = new bootstrap.Modal(document.getElementById('productModal'));
+let productModal;
 let selectedRow = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    productModal = new bootstrap.Modal(document.getElementById('productModal'));
+    
+    // Load existing items if editing
+    if (items.length > 0) {
+        items.forEach(item => loadExistingItem(item));
+        calculateGrandTotal();
+    }
+});
+
+function loadExistingItem(item) {
+    selectedRow = document.createElement('tr');
+    selectedRow.innerHTML = `
+        <td>
+            <input type="hidden" class="product-id" value="${item.product_id}">
+            <div class="product-name">${item.product_name}</div>
+        </td>
+        <td>
+            <input type="number" class="form-control quantity" min="1" value="${item.quantity}" 
+                   onchange="calculateTotal(this.parentElement.parentElement)">
+        </td>
+        <td>
+            <input type="number" step="0.01" class="form-control cost-price" value="${item.cost_price}" 
+                   onchange="calculateTotal(this.parentElement.parentElement)">
+        </td>
+        <td class="text-end total">Rs${formatCurrency(item.total_amount)}</td>
+        <td>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
+                <i class="fas fa-times"></i>
+            </button>
+        </td>
+    `;
+    document.querySelector('#itemsTable tbody').appendChild(selectedRow);
+}
 
 // Add item row
 function addItem() {
@@ -519,7 +554,7 @@ function addItem() {
             <input type="number" step="0.01" class="form-control cost-price" 
                    onchange="calculateTotal(this.parentElement.parentElement)">
         </td>
-        <td class="text-end total">$0.00</td>
+        <td class="text-end total">Rs0.00</td>
         <td>
             <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
                 <i class="fas fa-times"></i>
@@ -537,10 +572,14 @@ function openProductModal() {
 
 // Select product from modal
 function selectProduct(product) {
+    if (!selectedRow) {
+        addItem();
+    }
     selectedRow.querySelector('.product-id').value = product.id;
     selectedRow.querySelector('.product-name').textContent = product.name;
     selectedRow.querySelector('.cost-price').value = product.cost_price;
     calculateTotal(selectedRow);
+    selectedRow = null; // Reset selected row
     productModal.hide();
 }
 
@@ -549,7 +588,7 @@ function calculateTotal(row) {
     const quantity = parseFloat(row.querySelector('.quantity').value);
     const costPrice = parseFloat(row.querySelector('.cost-price').value);
     const total = quantity * costPrice;
-    row.querySelector('.total').textContent = `$${formatCurrency(total)}`;
+    row.querySelector('.total').textContent = `Rs${formatCurrency(total)}`;
     calculateGrandTotal();
 }
 
@@ -560,10 +599,10 @@ function calculateGrandTotal() {
     
     rows.forEach(row => {
         const totalText = row.querySelector('.total').textContent;
-        total += parseFloat(totalText.replace('$', ''));
+        total += parseFloat(totalText.replace('Rs', ''));
     });
     
-    document.getElementById('grandTotal').textContent = `$${formatCurrency(total)}`;
+    document.getElementById('grandTotal').textContent = `Rs${formatCurrency(total)}`;
 }
 
 // Remove item row
@@ -610,7 +649,7 @@ if (items.length > 0) {
                 <input type="number" step="0.01" class="form-control cost-price" value="${item.cost_price}" 
                        onchange="calculateTotal(this.parentElement.parentElement)">
             </td>
-            <td class="text-end total">$${formatCurrency(item.total_amount)}</td>
+            <td class="text-end total">Rs${formatCurrency(item.total_amount)}</td>
             <td>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
                     <i class="fas fa-times"></i>

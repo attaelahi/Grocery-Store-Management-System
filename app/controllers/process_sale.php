@@ -112,7 +112,8 @@ try {
     echo json_encode([
         'success' => true,
         'message' => 'Sale completed successfully',
-        'sale' => $sale
+        'sale' => $sale,
+        'invoice_url' => 'app/controllers/view_invoice.php?id=' . $sale_id
     ]);
     
 } catch (Exception $e) {

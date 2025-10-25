@@ -42,6 +42,11 @@ try {
                 $sql .= " AND s.created_by = " . intval($_GET['cashier_id']);
             }
             
+            // Apply payment status filter
+            if (!empty($_GET['payment_status'])) {
+                $sql .= " AND s.payment_status = '" . $conn->quote($_GET['payment_status']) . "'";
+            }
+            
             $sql .= " ORDER BY s.created_at DESC";
             
             $stmt = $conn->prepare($sql);
@@ -54,7 +59,9 @@ try {
                 'total_amount' => array_sum(array_column($data, 'total_amount')),
                 'total_tax' => array_sum(array_column($data, 'tax_amount')),
                 'total_discount' => array_sum(array_column($data, 'discount_amount')),
-                'net_amount' => array_sum(array_column($data, 'net_amount'))
+                'net_amount' => array_sum(array_column($data, 'net_amount')),
+                'total_paid' => array_sum(array_column($data, 'paid_amount')),
+                'total_due' => array_sum(array_column($data, 'due_amount'))
             ];
             break;
             
@@ -170,6 +177,15 @@ include 'app/views/layout/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label for="payment_status" class="form-label">Payment Status</label>
+                    <select class="form-control" id="payment_status" name="payment_status">
+                        <option value="">All Status</option>
+                        <option value="paid" <?php echo isset($_GET['payment_status']) && $_GET['payment_status'] == 'paid' ? 'selected' : ''; ?>>Paid</option>
+                        <option value="partial" <?php echo isset($_GET['payment_status']) && $_GET['payment_status'] == 'partial' ? 'selected' : ''; ?>>Partial</option>
+                        <option value="pending" <?php echo isset($_GET['payment_status']) && $_GET['payment_status'] == 'pending' ? 'selected' : ''; ?>>Unpaid</option>
+                    </select>
+                </div>
             <?php endif; ?>
             
             <?php if ($report_type == 'products'): ?>
@@ -206,7 +222,7 @@ include 'app/views/layout/header.php';
 <!-- Report Summary -->
 <div class="row mb-4">
     <?php if ($report_type == 'sales'): ?>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <div class="card" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div class="card-body">
                     <h6 class="text-muted mb-2">Total Sales</h6>
@@ -214,15 +230,31 @@ include 'app/views/layout/header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <div class="card" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div class="card-body">
-                    <h6 class="text-muted mb-2">Gross Amount</h6>
-                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['total_amount']); ?></h3>
+                    <h6 class="text-muted mb-2">Net Amount</h6>
+                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['net_amount']); ?></h3>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+            <div class="card text-white bg-success" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div class="card-body">
+                    <h6 class="mb-2">Amount Paid</h6>
+                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['total_paid']); ?></h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-white bg-danger" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div class="card-body">
+                    <h6 class="mb-2">Amount Due</h6>
+                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['total_due']); ?></h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
             <div class="card" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div class="card-body">
                     <h6 class="text-muted mb-2">Tax Amount</h6>
@@ -230,11 +262,11 @@ include 'app/views/layout/header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <div class="card" style="border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div class="card-body">
-                    <h6 class="text-muted mb-2">Net Amount</h6>
-                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['net_amount']); ?></h3>
+                    <h6 class="text-muted mb-2">Discount</h6>
+                    <h3 class="mb-0">Rs<?php echo formatCurrency($summary['total_discount']); ?></h3>
                 </div>
             </div>
         </div>
@@ -314,10 +346,13 @@ include 'app/views/layout/header.php';
                             <th>Customer</th>
                             <th>Cashier</th>
                             <th>Payment</th>
+                            <th>Status</th>
                             <th>Total</th>
+                            <th>Paid</th>
+                            <th>Due</th>
                             <th>Tax</th>
                             <th>Discount</th>
-                            <th>Net</th>
+                            <th>Actions</th>
                         <?php elseif ($report_type == 'products'): ?>
                             <th>Product</th>
                             <th>SKU</th>
@@ -344,16 +379,43 @@ include 'app/views/layout/header.php';
                                 <td><?php echo $row['customer_name'] ?? 'Walk-in'; ?></td>
                                 <td><?php echo $row['cashier_name']; ?></td>
                                 <td><?php echo ucfirst($row['payment_method']); ?></td>
-                                <td>Rs<?php echo formatCurrency($row['total_amount']); ?></td>
+                                <td>
+                                    <?php 
+                                    $paymentStatus = $row['payment_status'] ?? 'paid';
+                                    $statusColor = '';
+                                    $statusText = '';
+                                    if ($paymentStatus == 'paid') {
+                                        $statusColor = 'success';
+                                        $statusText = 'PAID';
+                                    } elseif ($paymentStatus == 'partial') {
+                                        $statusColor = 'warning';
+                                        $statusText = 'PARTIAL';
+                                    } else {
+                                        $statusColor = 'danger';
+                                        $statusText = 'UNPAID';
+                                    }
+                                    ?>
+                                    <span class="badge bg-<?php echo $statusColor; ?>"><?php echo $statusText; ?></span>
+                                </td>
+                                <td>Rs<?php echo formatCurrency($row['net_amount']); ?></td>
+                                <td class="text-success fw-bold">Rs<?php echo formatCurrency($row['paid_amount'] ?? $row['net_amount']); ?></td>
+                                <td class="<?php echo ($row['due_amount'] ?? 0) > 0 ? 'text-danger fw-bold' : ''; ?>">Rs<?php echo formatCurrency($row['due_amount'] ?? 0); ?></td>
                                 <td>Rs<?php echo formatCurrency($row['tax_amount']); ?></td>
                                 <td>Rs<?php echo formatCurrency($row['discount_amount']); ?></td>
-                                <td>Rs<?php echo formatCurrency($row['net_amount']); ?></td>
                                 <td>
                                     <a href="app/controllers/view_invoice.php?id=<?php echo $row['id']; ?>" class="btn btn-sm btn-info" target="_blank" title="View Invoice">
                                         <i class="fas fa-eye"></i>
                                     </a>
                                     <button onclick="printInvoice(<?php echo $row['id']; ?>)" class="btn btn-sm btn-secondary" title="Print Invoice">
                                         <i class="fas fa-print"></i>
+                                    </button>
+                                    <?php if (($row['payment_status'] ?? 'paid') != 'paid'): ?>
+                                    <button onclick="collectPayment(<?php echo $row['id']; ?>, '<?php echo $row['invoice_no']; ?>', <?php echo $row['due_amount'] ?? 0; ?>)" class="btn btn-sm btn-success" title="Collect Payment">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                    </button>
+                                    <?php endif; ?>
+                                    <button onclick="deleteSale(<?php echo $row['id']; ?>, '<?php echo $row['invoice_no']; ?>')" class="btn btn-sm btn-danger" title="Delete Sale">
+                                        <i class="fas fa-trash"></i>
                                     </button>
                                 </td>
                             <?php elseif ($report_type == 'products'): ?>
@@ -381,12 +443,155 @@ include 'app/views/layout/header.php';
     </div>
 </div>
 
+<!-- Collect Payment Modal -->
+<div class="modal fade" id="collectPaymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Collect Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="payment_sale_id">
+                <div class="mb-3">
+                    <label class="form-label">Invoice Number</label>
+                    <input type="text" class="form-control" id="payment_invoice_no" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Due Amount</label>
+                    <input type="text" class="form-control" id="payment_due_amount" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Payment Amount <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="payment_amount" step="0.01" min="0" required>
+                    <small class="text-muted">Enter amount to collect (max: due amount)</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Payment Method</label>
+                    <select class="form-control" id="payment_method">
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="mobile">Mobile Payment</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Note (Optional)</label>
+                    <textarea class="form-control" id="payment_note" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="submitPayment()">Collect Payment</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function printInvoice(saleId) {
     const printWindow = window.open(`app/controllers/view_invoice.php?id=${saleId}`, '_blank');
     printWindow.onload = function() {
         printWindow.print();
     };
+}
+
+function collectPayment(saleId, invoiceNo, dueAmount) {
+    document.getElementById('payment_sale_id').value = saleId;
+    document.getElementById('payment_invoice_no').value = invoiceNo;
+    document.getElementById('payment_due_amount').value = 'Rs' + dueAmount.toFixed(2);
+    document.getElementById('payment_amount').value = dueAmount.toFixed(2);
+    document.getElementById('payment_amount').max = dueAmount;
+    
+    const modal = new bootstrap.Modal(document.getElementById('collectPaymentModal'));
+    modal.show();
+}
+
+function submitPayment() {
+    const saleId = document.getElementById('payment_sale_id').value;
+    const amount = parseFloat(document.getElementById('payment_amount').value);
+    const dueAmount = parseFloat(document.getElementById('payment_due_amount').value.replace('Rs', ''));
+    const paymentMethod = document.getElementById('payment_method').value;
+    const note = document.getElementById('payment_note').value;
+    
+    if (!amount || amount <= 0) {
+        alert('Please enter a valid payment amount');
+        return;
+    }
+    
+    if (amount > dueAmount) {
+        alert('Payment amount cannot exceed due amount');
+        return;
+    }
+    
+    // Send payment collection request
+    fetch('app/controllers/collect_payment.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sale_id: saleId,
+            amount: amount,
+            payment_method: paymentMethod,
+            note: note
+        })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.text();
+    })
+    .then(text => {
+        console.log('Response text:', text);
+        const data = JSON.parse(text);
+        if (data.success) {
+            alert('Payment collected successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to collect payment'));
+            console.error('Error details:', data);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error collecting payment. Please check console for details.');
+    });
+}
+
+function deleteSale(saleId, invoiceNo) {
+    if (!confirm(`Are you sure you want to delete sale ${invoiceNo}? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Send delete request
+    fetch('app/controllers/delete_sale.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sale_id: saleId
+        })
+    })
+    .then(response => {
+        console.log('Delete response status:', response.status);
+        return response.text();
+    })
+    .then(text => {
+        console.log('Delete response text:', text);
+        const data = JSON.parse(text);
+        if (data.success) {
+            alert('Sale deleted successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to delete sale'));
+            console.error('Error details:', data);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error deleting sale. Please check console for details.');
+    });
 }
 
 function exportToCSV() {

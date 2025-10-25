@@ -118,9 +118,9 @@ function isActive($page) {
             <!-- Top navbar -->
             <nav class="navbar navbar-expand-lg navbar-light bg-white" style="box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div class="container-fluid">
-                    <button class="btn" type="button" id="sidebarToggle">
+                    <!-- <button class="btn" type="button" id="sidebarToggle">
                         <i class="fas fa-bars"></i>
-                    </button>
+                    </button> -->
                     
                     <div class="ms-auto d-flex align-items-center">
                         <div class="dropdown">

@@ -29,6 +29,10 @@ try {
         throw new Exception('Payment method is required');
     }
     
+    // Get payment details
+    $payment_status = isset($data['payment_status']) ? $data['payment_status'] : 'paid';
+    $paid_amount = isset($data['paid_amount']) ? floatval($data['paid_amount']) : 0;
+    
     // Start transaction
     $conn->beginTransaction();
     
@@ -49,18 +53,36 @@ try {
     
     $net_amount = $subtotal + $tax_amount - $discount_amount;
     
+    // Calculate due amount based on payment status
+    if ($payment_status === 'pending') {
+        $paid_amount = 0;
+        $due_amount = $net_amount;
+    } elseif ($payment_status === 'partial') {
+        if ($paid_amount <= 0 || $paid_amount > $net_amount) {
+            throw new Exception('Invalid paid amount');
+        }
+        $due_amount = $net_amount - $paid_amount;
+    } else {
+        $paid_amount = $net_amount;
+        $due_amount = 0;
+    }
+    
     // Insert sale
     $stmt = $conn->prepare("INSERT INTO sales (invoice_no, customer_id, total_amount, tax_amount, 
-                            discount_amount, net_amount, payment_method, created_by) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                            discount_amount, net_amount, paid_amount, due_amount, payment_method, 
+                            payment_status, created_by) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $invoice_no, 
         $customer_id, 
         $subtotal, 
         $tax_amount, 
         $discount_amount, 
-        $net_amount, 
-        $payment_method, 
+        $net_amount,
+        $paid_amount,
+        $due_amount,
+        $payment_method,
+        $payment_status,
         $_SESSION['user_id']
     ]);
     
@@ -85,6 +107,13 @@ try {
         $stmt = $conn->prepare("UPDATE products SET stock_quantity = stock_quantity - ? 
                                WHERE id = ?");
         $stmt->execute([$item['quantity'], $item['id']]);
+    }
+    
+    // Record payment if amount paid
+    if ($paid_amount > 0) {
+        $stmt = $conn->prepare("INSERT INTO payment_history (sale_id, amount, payment_method, 
+                               received_by) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$sale_id, $paid_amount, $payment_method, $_SESSION['user_id']]);
     }
     
     // Get sale details for receipt

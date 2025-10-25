@@ -139,10 +139,31 @@ include 'app/views/layout/header.php';
                 
                 <!-- Payment Options -->
                 <div class="mb-3">
+                    <label class="form-label">Payment Method</label>
                     <select id="paymentMethod" class="form-control">
                         <option value="cash">Cash</option>
                         <option value="card">Card</option>
                     </select>
+                </div>
+                
+                <!-- Payment Status -->
+                <div class="mb-3">
+                    <label class="form-label">Payment Status</label>
+                    <select id="paymentStatus" class="form-control" onchange="handlePaymentStatusChange()">
+                        <option value="paid">Full Payment</option>
+                        <option value="partial">Partial Payment</option>
+                        <option value="pending">Unpaid (On Credit)</option>
+                    </select>
+                </div>
+                
+                <!-- Paid Amount (shown for partial payment) -->
+                <div class="mb-3" id="paidAmountSection" style="display: none;">
+                    <label class="form-label">Amount Paid</label>
+                    <div class="input-group">
+                        <input type="number" id="paidAmount" class="form-control" value="0" min="0" step="0.01">
+                        <span class="input-group-text">Rs</span>
+                    </div>
+                    <small class="text-muted" id="dueAmountText"></small>
                 </div>
                 
                 <!-- Action Buttons -->
@@ -196,6 +217,44 @@ include 'app/views/layout/header.php';
 <script>
 let cart = [];
 let heldSales = [];
+
+// Handle payment status change
+function handlePaymentStatusChange() {
+    const paymentStatus = document.getElementById('paymentStatus').value;
+    const paidAmountSection = document.getElementById('paidAmountSection');
+    const paidAmountInput = document.getElementById('paidAmount');
+    
+    if (paymentStatus === 'partial') {
+        paidAmountSection.style.display = 'block';
+        paidAmountInput.value = 0;
+        updateDueAmount();
+    } else if (paymentStatus === 'pending') {
+        paidAmountSection.style.display = 'none';
+        paidAmountInput.value = 0;
+    } else {
+        paidAmountSection.style.display = 'none';
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const tax = subtotal * 0.10;
+        const discount = parseFloat(document.getElementById('discountAmount').value) || 0;
+        const total = subtotal + tax - discount;
+        paidAmountInput.value = total;
+    }
+}
+
+// Update due amount display
+function updateDueAmount() {
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const tax = subtotal * 0.10;
+    const discount = parseFloat(document.getElementById('discountAmount').value) || 0;
+    const total = subtotal + tax - discount;
+    const paidAmount = parseFloat(document.getElementById('paidAmount').value) || 0;
+    const dueAmount = total - paidAmount;
+    
+    document.getElementById('dueAmountText').textContent = `Due Amount: Rs${formatCurrency(Math.max(0, dueAmount))}`;
+}
+
+// Update paid amount when discount changes
+document.getElementById('paidAmount').addEventListener('input', updateDueAmount);
 
 // Add to cart
 function addToCart(product) {
@@ -283,7 +342,9 @@ function calculateTotals() {
 
 // Format currency
 function formatCurrency(amount) {
-    return amount.toFixed(2);
+    // Ensure amount is a number
+    const numAmount = parseFloat(amount) || 0;
+    return numAmount.toFixed(2);
 }
 
 // Hold sale
@@ -330,8 +391,11 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
 
     // Validate discount amount
     const discountAmount = parseFloat(document.getElementById('discountAmount').value) || 0;
-    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    if (discountAmount >= total) {
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const tax = subtotal * 0.10;
+    const total = subtotal + tax - discountAmount;
+    
+    if (discountAmount >= (subtotal + tax)) {
         Swal.fire({
             icon: 'error',
             title: 'Invalid Discount',
@@ -340,10 +404,80 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
         return;
     }
     
+    // Get payment status and paid amount
+    const paymentStatus = document.getElementById('paymentStatus').value;
+    let paidAmount = 0;
+    
+    if (paymentStatus === 'paid') {
+        paidAmount = total;
+    } else if (paymentStatus === 'partial') {
+        paidAmount = parseFloat(document.getElementById('paidAmount').value) || 0;
+        
+        if (paidAmount <= 0) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Invalid Amount',
+                text: 'Please enter a valid paid amount'
+            });
+            return;
+        }
+        
+        if (paidAmount > total) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Invalid Amount',
+                text: 'Paid amount cannot be greater than total amount'
+            });
+            return;
+        }
+    } else if (paymentStatus === 'pending') {
+        paidAmount = 0;
+        
+        // Confirm unpaid sale
+        Swal.fire({
+            title: 'Unpaid Sale',
+            text: 'This sale will be recorded as unpaid. Customer needs to be selected for credit tracking.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Continue',
+            cancelButtonText: 'Cancel'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                processSale(paymentMethod, paymentStatus, paidAmount, discountAmount);
+            }
+        });
+        return;
+    }
+    
+    // Show confirmation for partial payment
+    if (paymentStatus === 'partial') {
+        const dueAmount = total - paidAmount;
+        Swal.fire({
+            title: 'Partial Payment',
+            html: `<p>Paid: Rs${formatCurrency(paidAmount)}</p><p>Due: Rs${formatCurrency(dueAmount)}</p>`,
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'Continue',
+            cancelButtonText: 'Cancel'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                processSale(paymentMethod, paymentStatus, paidAmount, discountAmount);
+            }
+        });
+        return;
+    }
+    
+    // Process full payment
+    processSale(paymentMethod, paymentStatus, paidAmount, discountAmount);
+});
+
+function processSale(paymentMethod, paymentStatus, paidAmount, discountAmount) {
     const saleData = {
         customer_id: document.getElementById('customerId').value,
         items: cart,
         payment_method: paymentMethod,
+        payment_status: paymentStatus,
+        paid_amount: paidAmount,
         discount_amount: discountAmount
     };
     
@@ -374,15 +508,29 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
             showReceipt(data.sale);
             cart = [];
             updateCart();
+            
+            // Reset payment status to full payment
+            document.getElementById('paymentStatus').value = 'paid';
+            document.getElementById('paidAmountSection').style.display = 'none';
+            
             // Show success message and open invoice
+            let statusText = '';
+            if (paymentStatus === 'paid') {
+                statusText = 'Sale completed successfully';
+            } else if (paymentStatus === 'partial') {
+                statusText = `Partial payment received. Due: Rs${formatCurrency(data.sale.due_amount)}`;
+            } else {
+                statusText = 'Sale recorded as unpaid';
+            }
+            
             Swal.fire({
                 icon: 'success',
                 title: 'Success!',
+                text: statusText,
                 didClose: () => {
                     // Open invoice in new window
                     window.open(data.invoice_url, '_blank');
-                },
-                text: 'Sale completed successfully',
+                }
             });
         } else {
             // Show specific error message from server
@@ -402,7 +550,7 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
             text: error.message || 'A network error occurred while processing the sale. Please try again.'
         });
     });
-});
+}
 
 // Show receipt
 function showReceipt(sale) {

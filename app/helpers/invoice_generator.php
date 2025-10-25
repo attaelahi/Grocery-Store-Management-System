@@ -1,6 +1,22 @@
 <?php
 
 function generateInvoice($sale) {
+    // Determine payment status badge
+    $paymentStatus = $sale['payment_status'] ?? 'paid';
+    $statusBadge = '';
+    $statusColor = '';
+    
+    if ($paymentStatus == 'paid') {
+        $statusBadge = 'PAID IN FULL';
+        $statusColor = '#28a745';
+    } elseif ($paymentStatus == 'partial') {
+        $statusBadge = 'PARTIAL PAYMENT';
+        $statusColor = '#ffc107';
+    } else {
+        $statusBadge = 'UNPAID - ON CREDIT';
+        $statusColor = '#dc3545';
+    }
+    
     $html = '
     <!DOCTYPE html>
     <html>
@@ -17,6 +33,9 @@ function generateInvoice($sale) {
             .invoice-box table tr.details td { padding-bottom: 20px; }
             .invoice-box table tr.item td { border-bottom: 1px solid #eee; }
             .invoice-box table tr.total td:nth-child(2) { border-top: 2px solid #eee; font-weight: bold; }
+            .status-badge { display: inline-block; padding: 8px 15px; border-radius: 5px; font-weight: bold; color: white; margin-bottom: 10px; }
+            .payment-highlight { background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-top: 20px; }
+            .due-amount { color: #dc3545; font-weight: bold; font-size: 1.2em; }
             @media print { .invoice-box { box-shadow: none; border: 0; } }
         </style>
     </head>
@@ -29,6 +48,7 @@ function generateInvoice($sale) {
                             <tr>
                                 <td>
                                     <h2>INVOICE</h2>
+                                    <span class="status-badge" style="background-color: ' . $statusColor . ';">' . $statusBadge . '</span><br>
                                     Invoice #: ' . $sale['invoice_no'] . '<br>
                                     Date: ' . date('F j, Y', strtotime($sale['created_at'])) . '<br>
                                     Cashier: ' . $sale['cashier_name'] . '
@@ -55,10 +75,14 @@ function generateInvoice($sale) {
                 </tr>';
     }
 
+    // Get payment amounts
+    $paidAmount = $sale['paid_amount'] ?? $sale['net_amount'];
+    $dueAmount = $sale['due_amount'] ?? 0;
+    
     $html .= '
                 <tr class="total">
                     <td colspan="3">Subtotal:</td>
-                    <td>RS' . number_format($sale['total_amount'], 2) . '</td>
+                    <td>Rs' . number_format($sale['total_amount'], 2) . '</td>
                 </tr>
                 <tr class="total">
                     <td colspan="3">Tax:</td>
@@ -69,12 +93,54 @@ function generateInvoice($sale) {
                     <td>Rs' . number_format($sale['discount_amount'], 2) . '</td>
                 </tr>
                 <tr class="total">
-                    <td colspan="3"><strong>Total:</strong></td>
+                    <td colspan="3"><strong>Total Amount:</strong></td>
                     <td><strong>Rs' . number_format($sale['net_amount'], 2) . '</strong></td>
-                </tr>
-            </table>
+                </tr>';
+    
+    // Show payment details
+    $html .= '
+                <tr class="total" style="border-top: 2px solid #333;">
+                    <td colspan="3">Amount Paid:</td>
+                    <td style="color: #28a745;">Rs' . number_format($paidAmount, 2) . '</td>
+                </tr>';
+    
+    if ($dueAmount > 0) {
+        $html .= '
+                <tr class="total">
+                    <td colspan="3"><strong>Amount Due:</strong></td>
+                    <td class="due-amount">Rs' . number_format($dueAmount, 2) . '</td>
+                </tr>';
+    }
+    
+    $html .= '
+            </table>';
+    
+    // Add payment notice for partial/unpaid
+    if ($paymentStatus == 'partial') {
+        $html .= '
+            <div class="payment-highlight">
+                <strong>⚠ Partial Payment Received</strong><br>
+                A payment of Rs' . number_format($paidAmount, 2) . ' has been received.<br>
+                Outstanding balance: <span class="due-amount">Rs' . number_format($dueAmount, 2) . '</span>
+            </div>';
+    } elseif ($paymentStatus == 'pending') {
+        $html .= '
+            <div class="payment-highlight" style="border-left-color: #dc3545; background-color: #f8d7da;">
+                <strong>⚠ Payment Pending</strong><br>
+                This sale is on credit. Full amount due: <span class="due-amount">Rs' . number_format($dueAmount, 2) . '</span><br>
+                Please make payment at your earliest convenience.
+            </div>';
+    }
+    
+    $html .= '
             <div style="margin-top: 30px; text-align: center;">
-                <p>Thank you for your business!</p>
+                <p>Thank you for your business!</p>';
+    
+    if ($paymentStatus == 'paid') {
+        $html .= '<p style="color: #28a745; font-weight: bold;">✓ PAID IN FULL</p>';
+    }
+    
+    $html .= '
             </div>
         </div>
     </body>
